@@ -20,7 +20,7 @@ export function registerClickupTools(server: McpServer) {
     },
     async (): Promise<CallToolResult> => {
       // A URI de redirecionamento agora aponta para o seu servidor principal na porta 3000.
-      const redirectUri = "http://localhost:3000/clickup/callback";
+      const redirectUri = "https://mcp-server-deploy.onrender.com/clickup/callback";
 
       const authUrl = `https://app.clickup.com/api?client_id=${CLICKUP_CLIENT_ID}&redirect_uri=${encodeURIComponent(
         redirectUri
