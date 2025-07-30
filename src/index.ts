@@ -16,7 +16,9 @@ dotenv.config();
 
 const app = express();
 app.use(express.json());
-app.use(cors());
+app.use(cors({
+  exposedHeaders: ['mcp-session-id'],
+}));
 
 // mapa para armazenar os transportes ativos por id de sessão
 const transports: { [sessionId: string]: StreamableHTTPServerTransport } = {};
