@@ -150,7 +150,7 @@ app.get("/clickup/callback", async (req: Request, res: Response) => {
     };
 
     console.log("Token do ClickUp obtido e armazenado com sucesso.");
-    res.redirect("http://localhost:5173/?clickup_auth_code=${code}");
+    res.redirect(`http://localhost:5173/?clickup_auth_code=${code}`);
   } catch (err) {
     if (axios.isAxiosError(err)) {
       console.error(
