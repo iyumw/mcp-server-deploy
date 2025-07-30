@@ -86,6 +86,15 @@ app.post("/mcp", async (req, res) => {
   }
 });
 
+app.get("/clickup/login", (req: Request, res: Response) => {
+  const CLICKUP_CLIENT_ID = process.env.CLICKUP_CLIENT_ID;
+  const redirectUri = "https://mcp-server-deploy.onrender.com/clickup/callback";
+
+  const authUrl = `https://app.clickup.com/api?client_id=${CLICKUP_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+  
+  res.redirect(authUrl);
+});
+
 app.get("/clickup/callback", async (req: Request, res: Response) => {
   const code = req.query.code as string;
 
@@ -102,7 +111,6 @@ app.get("/clickup/callback", async (req: Request, res: Response) => {
       "Recebido código de autorização do ClickUp. A trocar por token..."
     );
 
-    // CORRIGIDO: Removido '.default' das chamadas do axios
     const tokenResponse = await axios.post(
       "https://api.clickup.com/api/v2/oauth/token",
       {
@@ -113,7 +121,6 @@ app.get("/clickup/callback", async (req: Request, res: Response) => {
     );
     const accessToken = tokenResponse.data.access_token;
 
-    // CORRIGIDO: Removido '.default' das chamadas do axios
     const teamsResponse = await axios.get(
       "https://api.clickup.com/api/v2/team",
       {
@@ -128,9 +135,7 @@ app.get("/clickup/callback", async (req: Request, res: Response) => {
     };
 
     console.log("Token do ClickUp obtido e armazenado com sucesso.");
-    res.send(
-      "<h1>Sucesso!</h1><p>Autenticação com o ClickUp concluída. Pode fechar esta aba e voltar ao seu cliente.</p>"
-    );
+    res.redirect('http://localhost:5173/');
   } catch (err) {
     if (axios.isAxiosError(err)) {
       console.error(
@@ -145,6 +150,54 @@ app.get("/clickup/callback", async (req: Request, res: Response) => {
       .send(
         "<h1>Erro na Autenticação</h1><p>Houve um problema ao obter o token do ClickUp. Verifique os logs do servidor.</p>"
       );
+  }
+});
+
+app.get("/github/login", (req: Request, res: Response) => {
+  const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
+  // A URL para onde o GitHub deve redirecionar o usuário após a autorização
+  const redirectUri = "https://mcp-server-deploy.onrender.com/github/callback";
+  
+  const authUrl = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=repo,user:email`;
+  
+  res.redirect(authUrl);
+});
+
+// Rota de callback: o GitHub redireciona para cá após o usuário autorizar
+app.get("/github/callback", async (req: Request, res: Response) => {
+  const code = req.query.code as string;
+  const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
+  const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
+
+  if (!code) {
+    return res.status(400).send("<h1>Erro</h1><p>Código de autorização não encontrado.</p>");
+  }
+
+  try {
+    const tokenResponse = await axios.post(
+      "https://github.com/login/oauth/access_token",
+      {
+        client_id: GITHUB_CLIENT_ID,
+        client_secret: GITHUB_CLIENT_SECRET,
+        code: code,
+      },
+      { headers: { Accept: "application/json" } }
+    );
+
+    const accessToken = tokenResponse.data.access_token;
+    
+    if (!accessToken) {
+       throw new Error("Access token não encontrado na resposta do GitHub.");
+    }
+    
+    tokenStore.github = accessToken;
+    console.log("Token do GitHub obtido e armazenado com sucesso.");
+    
+    res.redirect('http://localhost:5173/'); 
+
+  } catch (err) {
+    console.error("Erro no callback do GitHub:", err);
+    res.status(500).send("<h1>Erro na Autenticação</h1><p>Houve um problema ao obter o token do GitHub.</p>");
   }
 });
 
