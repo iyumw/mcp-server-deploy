@@ -25,7 +25,21 @@ app.use(
 // mapa para armazenar os transportes ativos por id de sessão
 const transports: { [sessionId: string]: StreamableHTTPServerTransport } = {};
 
-// rota principal do mcp
+function createServerForSession(sessionId?: string): McpServer {
+  const server = new McpServer({
+    name: "meu-servidor-github",
+    version: "2.0.0",
+    description: "Assistente de automação GitHub-ClickUp.",
+  });
+
+  // Passa o sessionId para as funções de registro se ele existir
+  registerGithubTools(server);
+  registerClickupTools(server);
+  registerIntegrationTools(server);
+  
+  return server;
+}
+
 app.post("/mcp", async (req, res) => {
   try {
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
@@ -33,8 +47,9 @@ app.post("/mcp", async (req, res) => {
 
     if (sessionId && transports[sessionId]) {
       transport = transports[sessionId];
-      // CORRIGIDO: Substituído isInitializeRequest por uma verificação manual mais fiável.
-    } else if (!sessionId && req.body && req.body.method === "initialize") {
+    } else if (!sessionId && req.body && req.body.method === 'initialize') {
+      const server = createServerForSession(); // Cria um servidor base para inicialização
+      
       transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (newSessionId) => {
@@ -47,34 +62,27 @@ app.post("/mcp", async (req, res) => {
         if (transport.sessionId) {
           console.log(`[Server] Sessão encerrada: ${transport.sessionId}`);
           delete transports[transport.sessionId];
+          delete sessionTokens[transport.sessionId]; // Limpa os tokens da sessão
         }
       };
-
-      const server = new McpServer({
-        name: "meu-servidor-github",
-        version: "2.0.0",
-        description:
-          "Bem-vindo ao assistente de automação GitHub-ClickUp!\n\nPara começar, autentique-se nos serviços necessários:\n1. Execute a ferramenta `github_login` e siga as instruções.\n2. Execute a ferramenta `clickup_login` e siga as instruções.",
-      });
-
-      registerGithubTools(server);
-      registerClickupTools(server);
-      registerIntegrationTools(server);
-
+      
       await server.connect(transport);
+
     } else {
+      // Este é o erro que você está vendo. A sessão não é encontrada.
       return res.status(400).json({
         jsonrpc: "2.0",
         error: {
           code: -32000,
-          message:
-            "Bad Request: No valid session ID provided or invalid initialization request",
+          message: "Bad Request: No valid session ID provided or invalid initialization request",
         },
-        id: null,
+        id: req.body?.id || null,
       });
     }
 
+    // A cada chamada de tool, o transport lida com a requisição
     await transport.handleRequest(req, res, req.body);
+    
   } catch (error) {
     console.error("ERRO INESPERADO NA ROTA MCP!", error);
     res.status(500).json({
