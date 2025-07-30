@@ -7,7 +7,7 @@ import axios from "axios"; // Importação corrigida
 import dotenv from "dotenv";
 import cors from "cors";
 
-import { tokenStore } from "./tokenStore.js";
+import { sessionTokens, temporaryTokens } from "./tokenStore.js";
 import { registerGithubTools } from "./tools/github.js";
 import { registerClickupTools } from "./tools/clickup.js";
 import { registerIntegrationTools } from "./tools/integrations.js";
@@ -133,14 +133,16 @@ app.get("/clickup/callback", async (req: Request, res: Response) => {
       }
     );
 
-    tokenStore.clickup = {
-      accessToken: accessToken,
-      selectedTeamId: null,
-      workspaces: teamsResponse.data.teams,
+    if (!accessToken) { throw new Error("..."); }
+    
+    // Salva o token no armazenamento temporário usando o 'code' como chave
+    temporaryTokens[code] = {
+      github: null,
+      clickup: accessToken
     };
 
     console.log("Token do ClickUp obtido e armazenado com sucesso.");
-    res.redirect("http://localhost:5173/");
+    res.redirect("http://localhost:5173/?clickup_auth_code=${code}");
   } catch (err) {
     if (axios.isAxiosError(err)) {
       console.error(
@@ -190,30 +192,23 @@ app.get("/github/callback", async (req: Request, res: Response) => {
         client_secret: GITHUB_CLIENT_SECRET,
         code: code,
       },
-      { headers: { Accept: "application/json" } }
+      { headers: { Accept: "application/json, text/event-stream" } }
     );
 
-    console.log("Resposta completa do GitHub:", tokenResponse.data);
-
-    // Se a resposta contiver um erro, o GitHub nos diz o porquê
-    if (tokenResponse.data.error) {
-      throw new Error(
-        `O GitHub retornou um erro: ${tokenResponse.data.error_description}`
-      );
-    }
-
     const accessToken = tokenResponse.data.access_token;
+    
+    if (!accessToken) { throw new Error("..."); }
+    
+    // Salva o token no armazenamento temporário usando o 'code' como chave
+    temporaryTokens[code] = {
+      github: accessToken,
+      clickup: null // ou mantenha o token do clickup se já existir
+    };
 
-    if (!accessToken) {
-      throw new Error(
-        "Access token não encontrado na resposta do GitHub, mesmo sem um erro explícito."
-      );
-    }
-
-    tokenStore.github = accessToken;
-    console.log("Token do GitHub obtido e armazenado com sucesso.");
-
-    res.redirect("http://localhost:5173/");
+    console.log("Token do GitHub armazenado temporariamente.");
+    
+    // Redireciona de volta para o frontend, mas agora passando o 'code' na URL
+    res.redirect(`http://localhost:5173/?github_auth_code=${code}`); 
   } catch (err) {
     // Agora o log será muito mais específico
     console.error("Erro no callback do GitHub:", err);
@@ -223,6 +218,27 @@ app.get("/github/callback", async (req: Request, res: Response) => {
         `<h1>Erro na Autenticação</h1><p>Houve um problema ao obter o token do GitHub. Verifique os logs do servidor no Render para mais detalhes.</p>`
       );
   }
+});
+
+app.post("/api/claim-session", (req: Request, res: Response) => {
+    const { authCode, sessionId } = req.body;
+
+    if (!authCode || !sessionId) {
+        return res.status(400).json({ error: "authCode e sessionId são obrigatórios." });
+    }
+
+    // Se encontramos os tokens temporários para aquele código de autorização...
+    if (temporaryTokens[authCode]) {
+        // ...associamos esses tokens à sessão do frontend
+        sessionTokens[sessionId] = temporaryTokens[authCode];
+        // Removemos o token temporário para que não possa ser usado novamente
+        delete temporaryTokens[authCode];
+        
+        console.log(`Sessão ${sessionId} reivindicada com sucesso.`);
+        return res.status(200).json({ success: true });
+    }
+
+    return res.status(404).json({ error: "Código de autorização inválido ou expirado." });
 });
 
 // rotas adicionais
