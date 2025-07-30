@@ -16,9 +16,11 @@ dotenv.config();
 
 const app = express();
 app.use(express.json());
-app.use(cors({
-  exposedHeaders: ['mcp-session-id'],
-}));
+app.use(
+  cors({
+    exposedHeaders: ["mcp-session-id"],
+  })
+);
 
 // mapa para armazenar os transportes ativos por id de sessão
 const transports: { [sessionId: string]: StreamableHTTPServerTransport } = {};
@@ -31,8 +33,8 @@ app.post("/mcp", async (req, res) => {
 
     if (sessionId && transports[sessionId]) {
       transport = transports[sessionId];
-    // CORRIGIDO: Substituído isInitializeRequest por uma verificação manual mais fiável.
-    } else if (!sessionId && req.body && req.body.method === 'initialize') {
+      // CORRIGIDO: Substituído isInitializeRequest por uma verificação manual mais fiável.
+    } else if (!sessionId && req.body && req.body.method === "initialize") {
       transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (newSessionId) => {
@@ -65,7 +67,8 @@ app.post("/mcp", async (req, res) => {
         jsonrpc: "2.0",
         error: {
           code: -32000,
-          message: "Bad Request: No valid session ID provided or invalid initialization request",
+          message:
+            "Bad Request: No valid session ID provided or invalid initialization request",
         },
         id: null,
       });
@@ -73,16 +76,16 @@ app.post("/mcp", async (req, res) => {
 
     await transport.handleRequest(req, res, req.body);
   } catch (error) {
-      console.error("ERRO INESPERADO NA ROTA MCP!", error);
-      res.status(500).json({
-          jsonrpc: '2.0',
-          error: {
-              code: -32000,
-              message: 'Internal Server Error',
-              data: (error as Error).message,
-          },
-          id: (req.body && req.body.id) || null
-      });
+    console.error("ERRO INESPERADO NA ROTA MCP!", error);
+    res.status(500).json({
+      jsonrpc: "2.0",
+      error: {
+        code: -32000,
+        message: "Internal Server Error",
+        data: (error as Error).message,
+      },
+      id: (req.body && req.body.id) || null,
+    });
   }
 });
 
@@ -90,8 +93,10 @@ app.get("/clickup/login", (req: Request, res: Response) => {
   const CLICKUP_CLIENT_ID = process.env.CLICKUP_CLIENT_ID;
   const redirectUri = "https://mcp-server-deploy.onrender.com/clickup/callback";
 
-  const authUrl = `https://app.clickup.com/api?client_id=${CLICKUP_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}`;
-  
+  const authUrl = `https://app.clickup.com/api?client_id=${CLICKUP_CLIENT_ID}&redirect_uri=${encodeURIComponent(
+    redirectUri
+  )}`;
+
   res.redirect(authUrl);
 });
 
@@ -135,7 +140,7 @@ app.get("/clickup/callback", async (req: Request, res: Response) => {
     };
 
     console.log("Token do ClickUp obtido e armazenado com sucesso.");
-    res.redirect('http://localhost:5173/');
+    res.redirect("http://localhost:5173/");
   } catch (err) {
     if (axios.isAxiosError(err)) {
       console.error(
@@ -157,9 +162,11 @@ app.get("/github/login", (req: Request, res: Response) => {
   const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
   // A URL para onde o GitHub deve redirecionar o usuário após a autorização
   const redirectUri = "https://mcp-server-deploy.onrender.com/github/callback";
-  
-  const authUrl = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=repo,user:email`;
-  
+
+  const authUrl = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(
+    redirectUri
+  )}&scope=repo,user:email`;
+
   res.redirect(authUrl);
 });
 
@@ -170,7 +177,9 @@ app.get("/github/callback", async (req: Request, res: Response) => {
   const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
 
   if (!code) {
-    return res.status(400).send("<h1>Erro</h1><p>Código de autorização não encontrado.</p>");
+    return res
+      .status(400)
+      .send("<h1>Erro</h1><p>Código de autorização não encontrado.</p>");
   }
 
   try {
@@ -184,30 +193,36 @@ app.get("/github/callback", async (req: Request, res: Response) => {
       { headers: { Accept: "application/json" } }
     );
 
-    const accessToken = tokenResponse.data.access_token;
-    
-    if (!accessToken) {
-       throw new Error("Access token não encontrado na resposta do GitHub.");
+    console.log("Resposta completa do GitHub:", tokenResponse.data);
+
+    // Se a resposta contiver um erro, o GitHub nos diz o porquê
+    if (tokenResponse.data.error) {
+      throw new Error(
+        `O GitHub retornou um erro: ${tokenResponse.data.error_description}`
+      );
     }
-    
+
+    const accessToken = tokenResponse.data.access_token;
+
+    if (!accessToken) {
+      throw new Error(
+        "Access token não encontrado na resposta do GitHub, mesmo sem um erro explícito."
+      );
+    }
+
     tokenStore.github = accessToken;
     console.log("Token do GitHub obtido e armazenado com sucesso.");
-    
-    res.redirect('http://localhost:5173/'); 
 
+    res.redirect("http://localhost:5173/");
   } catch (err) {
-    let errorMessage = "Houve um problema ao obter o token do GitHub.";
-  // Verifica se o erro veio do axios e se tem uma resposta do GitHub
-  if (axios.isAxiosError(err) && err.response?.data) {
-    console.error("Erro na API do GitHub:", err.response.data);
-    // Adiciona a descrição do erro do GitHub à mensagem
-    errorMessage += ` Detalhes: ${err.response.data.error_description || JSON.stringify(err.response.data)}`;
-  } else {
-    console.error("Erro inesperado no callback do GitHub:", err);
+    // Agora o log será muito mais específico
+    console.error("Erro no callback do GitHub:", err);
+    res
+      .status(500)
+      .send(
+        `<h1>Erro na Autenticação</h1><p>Houve um problema ao obter o token do GitHub. Verifique os logs do servidor no Render para mais detalhes.</p>`
+      );
   }
-  
-  res.status(500).send(`<h1>Erro na Autenticação</h1><p>${errorMessage}</p>`);
-}
 });
 
 // rotas adicionais
