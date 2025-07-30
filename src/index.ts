@@ -196,9 +196,18 @@ app.get("/github/callback", async (req: Request, res: Response) => {
     res.redirect('http://localhost:5173/'); 
 
   } catch (err) {
-    console.error("Erro no callback do GitHub:", err);
-    res.status(500).send("<h1>Erro na Autenticação</h1><p>Houve um problema ao obter o token do GitHub.</p>");
+    let errorMessage = "Houve um problema ao obter o token do GitHub.";
+  // Verifica se o erro veio do axios e se tem uma resposta do GitHub
+  if (axios.isAxiosError(err) && err.response?.data) {
+    console.error("Erro na API do GitHub:", err.response.data);
+    // Adiciona a descrição do erro do GitHub à mensagem
+    errorMessage += ` Detalhes: ${err.response.data.error_description || JSON.stringify(err.response.data)}`;
+  } else {
+    console.error("Erro inesperado no callback do GitHub:", err);
   }
+  
+  res.status(500).send(`<h1>Erro na Autenticação</h1><p>${errorMessage}</p>`);
+}
 });
 
 // rotas adicionais
