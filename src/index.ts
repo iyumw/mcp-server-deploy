@@ -124,6 +124,7 @@ app.get("/clickup/callback", async (req: Request, res: Response) => {
         code,
       }
     );
+
     const accessToken = tokenResponse.data.access_token;
 
     const teamsResponse = await axios.get(
@@ -133,12 +134,19 @@ app.get("/clickup/callback", async (req: Request, res: Response) => {
       }
     );
 
-    if (!accessToken) { throw new Error("..."); }
-    
+    if (!accessToken) {
+      throw new Error("...");
+    }
+
     // Salva o token no armazenamento temporário usando o 'code' como chave
     temporaryTokens[code] = {
-      github: null,
-      clickup: accessToken
+      ...temporaryTokens[code], // Mantém tokens existentes (ex: do GitHub)
+      github: temporaryTokens[code]?.github || null,
+      clickup: {
+        accessToken: accessToken,
+        selectedTeamId: null,
+        workspaces: teamsResponse.data.teams,
+      },
     };
 
     console.log("Token do ClickUp obtido e armazenado com sucesso.");
@@ -196,19 +204,22 @@ app.get("/github/callback", async (req: Request, res: Response) => {
     );
 
     const accessToken = tokenResponse.data.access_token;
-    
-    if (!accessToken) { throw new Error("..."); }
-    
+
+    if (!accessToken) {
+      throw new Error("...");
+    }
+
     // Salva o token no armazenamento temporário usando o 'code' como chave
     temporaryTokens[code] = {
+      ...temporaryTokens[code], // Mantém tokens existentes (ex: do ClickUp)
       github: accessToken,
-      clickup: null // ou mantenha o token do clickup se já existir
+      clickup: temporaryTokens[code]?.clickup || null,
     };
 
     console.log("Token do GitHub armazenado temporariamente.");
-    
+
     // Redireciona de volta para o frontend, mas agora passando o 'code' na URL
-    res.redirect(`http://localhost:5173/?github_auth_code=${code}`); 
+    res.redirect(`http://localhost:5173/?github_auth_code=${code}`);
   } catch (err) {
     // Agora o log será muito mais específico
     console.error("Erro no callback do GitHub:", err);
@@ -221,24 +232,40 @@ app.get("/github/callback", async (req: Request, res: Response) => {
 });
 
 app.post("/api/claim-session", (req: Request, res: Response) => {
-    const { authCode, sessionId } = req.body;
+  const { authCode, sessionId } = req.body;
+  console.log(
+    "Recebida requisição em /api/claim-session com o body:",
+    req.body
+  ); // Log de depuração
 
-    if (!authCode || !sessionId) {
-        return res.status(400).json({ error: "authCode e sessionId são obrigatórios." });
-    }
+  if (!authCode || !sessionId) {
+    return res
+      .status(400)
+      .json({ error: "authCode e sessionId são obrigatórios." });
+  }
 
-    // Se encontramos os tokens temporários para aquele código de autorização...
-    if (temporaryTokens[authCode]) {
-        // ...associamos esses tokens à sessão do frontend
-        sessionTokens[sessionId] = temporaryTokens[authCode];
-        // Removemos o token temporário para que não possa ser usado novamente
-        delete temporaryTokens[authCode];
-        
-        console.log(`Sessão ${sessionId} reivindicada com sucesso.`);
-        return res.status(200).json({ success: true });
-    }
+  if (temporaryTokens[authCode]) {
+    // Se a sessão já tiver tokens, fazemos um merge para não perder a outra autenticação
+    const existingSession = sessionTokens[sessionId] || {
+      github: null,
+      clickup: null,
+    };
+    const newTokens = temporaryTokens[authCode];
 
-    return res.status(404).json({ error: "Código de autorização inválido ou expirado." });
+    sessionTokens[sessionId] = {
+      github: newTokens.github || existingSession.github,
+      clickup: newTokens.clickup || existingSession.clickup,
+    };
+
+    delete temporaryTokens[authCode];
+
+    console.log(`Sessão ${sessionId} reivindicada com sucesso.`);
+    return res.status(200).json({ success: true });
+  }
+
+  return res
+    .status(404)
+    .json({ error: "Código de autorização inválido ou expirado." });
 });
 
 // rotas adicionais
